@@ -45,6 +45,32 @@ const helpers = {
     const body = await response.json()
     return { body, status: response.status }
   },
+  replaceTestVote: async ({
+    auth,
+    electionId,
+    encryptedVote,
+    privkey,
+  }: {
+    auth: string
+    electionId: string
+    encryptedVote: Record<string, CipherStrings>
+    privkey: string
+  }) => {
+    const message = encodeReplacementPayload({ auth, election_id: electionId, encrypted_vote: encryptedVote })
+    const signature = await signReplacement(privkey, message)
+    const response = await fetch(`${API_BASE}/replace-vote`, {
+      body: JSON.stringify({
+        auth,
+        election_id: electionId,
+        encrypted_vote: encryptedVote,
+        reason: 'selections',
+        signature,
+      }),
+      headers: { 'Content-Type': 'application/json' },
+      method: 'POST',
+    })
+    return { body: await response.json(), status: response.status }
+  },
   strengthenTestVote: async ({
     auth,
     electionId,
@@ -243,6 +269,104 @@ test('Strengthened vote - packed ciphertext is replaced in cache-accepted', asyn
     const vote = afterBody.results.find((r) => secretsMatch(r.auth, auth))
     expect(vote?.mayor).toEqual(strengthened.mayor)
     expect(afterBody.results).toHaveLength(1)
+  } finally {
+    await helpers.cleanupTestElection(electionId)
+  }
+}, 15_000)
+
+// Test 3b: Changing a vote (A -> B -> C) replaces it in place; the packed cache serves only the latest
+test('Change vote - repeated replacements serve only the latest ciphertext', async () => {
+  const electionId = `test-change-vote-cache-${Date.now()}`
+  const auth = 'd1e2f3a4b5'
+  const [a, b, c] = ['a', 'b', 'c'].map((v) => ({ mayor: { encrypted: `enc_${v}`, lock: `lock_${v}` } }))
+
+  try {
+    expect((await helpers.createTestElection(electionId)).status).toBe(201)
+    expect((await helpers.createTestVoters(electionId, [{ auth_token: auth }])).status).toBe(201)
+
+    const { voter_privkey, voter_pubkey } = await generateVoterKeypair()
+    expect((await helpers.submitTestVote(electionId, auth, a, voter_pubkey)).status).toBe(200)
+
+    // Pack, so replacements must patch the cached page (not just the live tail)
+    const packed = await helpers.callCacheAccepted(electionId)
+    expect(packed.status).toBe(200)
+    const etagBefore = packed.headers.etag
+
+    // Wrong device key: rejected, nothing changes
+    const otherDevice = await generateVoterKeypair()
+    const wrongKey = await helpers.replaceTestVote({
+      auth,
+      electionId,
+      encryptedVote: b,
+      privkey: otherDevice.voter_privkey,
+    })
+    expect(wrongKey.status).toBe(401)
+
+    for (const next of [b, c]) {
+      const replaced = await helpers.replaceTestVote({ auth, electionId, encryptedVote: next, privkey: voter_privkey })
+      expect(replaced.status).toBe(200)
+    }
+
+    // Replaying an earlier signed replacement can't roll the vote back
+    const replay = await helpers.replaceTestVote({ auth, electionId, encryptedVote: b, privkey: voter_privkey })
+    expect(replay.status).toBe(409)
+
+    const after = await helpers.callCacheAccepted(electionId)
+    expect(after.status).toBe(200)
+    expect(after.headers.etag).not.toBe(etagBefore)
+    const results = (after.body as { results: Array<{ auth: string; mayor?: CipherStrings }> }).results
+    expect(results).toHaveLength(1) // still exactly one accepted ballot for this voter
+    expect(results[0].mayor).toEqual(c.mayor)
+  } finally {
+    await helpers.cleanupTestElection(electionId)
+  }
+}, 15_000)
+
+// Test 3c: A pending link-auth vote is changed via its persisted link_auth (never the literal 'link')
+test('Change vote - pending link-auth vote is replaced in place', async () => {
+  const electionId = `test-change-vote-pending-${Date.now()}`
+  const original = { test: { encrypted: 'enc_1', lock: 'lock_1' } }
+  const changed = { test: { encrypted: 'enc_2', lock: 'lock_2' } }
+
+  try {
+    expect((await helpers.createTestElection(electionId)).status).toBe(201)
+
+    const { voter_privkey, voter_pubkey } = await generateVoterKeypair()
+    const submit = await helpers.submitTestVote(electionId, 'link', original, voter_pubkey)
+    expect(submit.status).toBe(200)
+    const { link_auth } = (await submit.json()) as { link_auth: string }
+
+    // Pack while still pending
+    expect((await helpers.callCacheAccepted(electionId)).status).toBe(200)
+
+    const literal = await helpers.replaceTestVote({
+      auth: 'link',
+      electionId,
+      encryptedVote: changed,
+      privkey: voter_privkey,
+    })
+    expect(literal.status).toBe(404)
+
+    const replaced = await helpers.replaceTestVote({
+      auth: link_auth,
+      electionId,
+      encryptedVote: changed,
+      privkey: voter_privkey,
+    })
+    expect(replaced.status).toBe(200)
+
+    const after = await helpers.callCacheAccepted(electionId)
+    const results = (after.body as { results: Array<{ auth: string; test?: CipherStrings }> }).results
+    expect(results).toHaveLength(1)
+    expect(results[0].auth).toBe('pending')
+    expect(results[0].test).toEqual(changed.test)
+
+    // Approving afterwards promotes the changed ballot, not the original
+    expect((await helpers.approvePendingVotes(electionId, [link_auth])).status).toBe(201)
+    const approved = await helpers.callCacheAccepted(electionId)
+    const approvedResults = (approved.body as { results: Array<{ auth: string; test?: CipherStrings }> }).results
+    expect(approvedResults).toHaveLength(1)
+    expect(approvedResults[0].test).toEqual(changed.test)
   } finally {
     await helpers.cleanupTestElection(electionId)
   }

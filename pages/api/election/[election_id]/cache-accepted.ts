@@ -316,25 +316,30 @@ const maybePackNewVotes = async (args: {
 }
 
 /**
- * After an in-place ciphertext replace (e.g. strengthen), keep /cache-accepted fresh:
+ * After an in-place ciphertext replace (changed selections or verification #), keep /cache-accepted fresh:
  * - If the vote is still in the packer's tail → no-op (live query already sees the update).
  * - If packed → patch that page entry and bump root.revision (ETag).
  * - If lease busy or page entry missing → full cache reset (correctness over cost).
+ *
+ * Pass `vote_ref` so the ciphertext is re-read while holding the lease. Otherwise two near-simultaneous
+ * replacements could patch the cache in the opposite order of their commits, leaving a stale ballot.
  */
 export async function invalidateCachedVote(
   electionDoc: firestore.DocumentReference,
   {
     auth,
     created_at,
-    encrypted_vote,
+    encrypted_vote: providedVote,
     pending = false,
     vote_doc_id,
+    vote_ref,
   }: {
     auth: string
     created_at?: TimestampLike
     encrypted_vote: EncryptedVote
     pending?: boolean
     vote_doc_id: string
+    vote_ref?: firestore.DocumentReference
   },
 ): Promise<'patched' | 'reset' | 'skipped'> {
   const rootRef = electionDoc.collection('votes-cached').doc('root')
@@ -359,6 +364,10 @@ export async function invalidateCachedVote(
 
   let didReset = false
   try {
+    // Use the latest committed ciphertext, read under the lease
+    const latestVote = vote_ref ? (await vote_ref.get()).data()?.encrypted_vote : undefined
+    const encrypted_vote = (latestVote as EncryptedVote | undefined) || providedVote
+
     // Find the packed entry and swap in the new ciphertext
     const snap = await pagesCol.orderBy(firestore.FieldPath.documentId()).get()
     let found = false

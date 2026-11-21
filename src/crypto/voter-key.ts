@@ -29,6 +29,25 @@ export function encodeInvalidationResponsePayload({
   return new TextEncoder().encode(JSON.stringify({ auth, election_id, message }))
 }
 
+/** Why a submitted ballot was replaced. Informational only: it is NOT part of the signed payload,
+ * so the server can't (and doesn't) rely on it. Legacy history entries without a reason were all
+ * verification-number changes. */
+export const replacementReasons = ['selections', 'verification-number'] as const
+export type ReplacementReason = (typeof replacementReasons)[number]
+export const isReplacementReason = (value: unknown): value is ReplacementReason =>
+  replacementReasons.includes(value as ReplacementReason)
+
+/** Encrypted vote with sorted keys and only { encrypted, lock } per column. */
+export function canonicalizeEncryptedVote(encrypted_vote: Record<string, CipherStrings>) {
+  return Object.keys(encrypted_vote)
+    .sort()
+    .reduce((acc, key) => {
+      const { encrypted, lock } = encrypted_vote[key]
+      acc[key] = { encrypted, lock }
+      return acc
+    }, {} as Record<string, CipherStrings>)
+}
+
 /** Canonical bytes the client signs and the server verifies for a vote replace. */
 export function encodeReplacementPayload({
   auth,
@@ -39,13 +58,7 @@ export function encodeReplacementPayload({
   election_id: string
   encrypted_vote: Record<string, CipherStrings>
 }) {
-  const sorted = Object.keys(encrypted_vote)
-    .sort()
-    .reduce((acc, key) => {
-      const { encrypted, lock } = encrypted_vote[key]
-      acc[key] = { encrypted, lock }
-      return acc
-    }, {} as Record<string, CipherStrings>)
+  const sorted = canonicalizeEncryptedVote(encrypted_vote)
   return new TextEncoder().encode(JSON.stringify({ auth, election_id, encrypted_vote: sorted }))
 }
 
