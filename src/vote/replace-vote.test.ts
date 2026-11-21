@@ -42,15 +42,13 @@ class FakeDb {
 }
 
 class FakeDocRef {
-  constructor(public db: FakeDb, public path: string) {}
-  get firestore() {
-    return this.db
-  }
-  get id() {
-    return this.path.split('/').at(-1) as string
-  }
-  get parent() {
-    return { id: this.path.split('/').at(-2) as string }
+  firestore: FakeDb
+  id: string
+  parent: { id: string }
+  constructor(public db: FakeDb, public path: string) {
+    this.firestore = db
+    this.id = path.split('/').at(-1) as string
+    this.parent = { id: path.split('/').at(-2) as string }
   }
   collection(name: string) {
     return new FakeQuery(this.db, `${this.path}/${name}`)
@@ -297,7 +295,7 @@ describe('replaceSubmittedVote', () => {
   test('vote without a voter_pubkey can never be replaced', async () => {
     const { db, getVote, replace } = await setup()
     const path = `elections/${election_id}/votes/${auth}`
-    const data = { ...db.docs.get(path)!.data }
+    const data = { ...db.docs.get(path)?.data }
     delete data.voter_pubkey
     db.docs.set(path, { data, version: 99 })
 
