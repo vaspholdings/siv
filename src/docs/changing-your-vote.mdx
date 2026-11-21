@@ -1,0 +1,71 @@
+# Changing a Submitted Vote
+
+While an election is still accepting votes, a voter can change the ballot they already submitted.
+
+- Submitting a change **replaces** the voter's previous encrypted ballot. It does **not** cast an additional ballot.
+- Only the voter's **latest submitted** ballot is included in the final anonymization, unlocking, and tally.
+- Changes stop as soon as the election administrator stops accepting votes.
+
+## For Voters
+
+1. After you submit your vote, the confirmation page shows a **Change your vote** button.
+
+2. Click it to reopen your ballot. It starts with your currently submitted selections.
+
+3. Make any changes, then click **Submit changed vote**. Or click **Cancel** to keep your vote exactly as it is.
+
+   Opening the ballot doesn't change anything. Your submitted vote stays in place until a change is successfully submitted.
+
+4. When the change is accepted, you'll see **Vote updated**. Your previous encrypted submission was replaced, and only your latest submitted vote will be tallied.
+
+You can repeat this as many times as you like while voting is open.
+
+Once voting closes, the page shows: _Voting has closed. Your submitted vote can no longer be changed._
+
+### Use the same browser & device
+
+To change a submitted vote, **return using the same browser & device that you voted from**, using your original voting link.
+
+Your device keeps a private key that is needed to change your vote (see below). If you use a different device or browser, or clear this site's data from your browser, that key and your detailed vote receipt are no longer available there, so your vote can't be changed. Your submitted vote still counts.
+
+Moving the key to another device isn't supported.
+
+### Your Verification #
+
+Changing your selections keeps your existing **Verification #**. Your ballot is re-encrypted on your device, with fresh encryption randomness.
+
+After the election closes and votes are unlocked, use your Verification # to find your final ballot on the Election Status page, just like before. It will show your latest submitted selections.
+
+You can still customize your Verification # before or after changing your selections.
+
+If the administrator had already unlocked votes once before your latest change, your change appears in the published results after votes are shuffled & unlocked again.
+
+## How It Works: Privacy & Security
+
+- Your ballot changes are made and encrypted on your own device, just like your original vote. Your plaintext selections never leave your device.
+
+- When you first submit your vote, your device creates a voting key pair. It sends only the **public key**, stored with your encrypted ballot. The **private key** stays on your device and is never sent to SIV.
+
+- Every change must be signed by that private key. The SIV server checks the signature against the public key from your original submission, before accepting the change.
+
+- So knowing a voter's auth token alone is **not** enough to change their submitted ballot.
+
+- The server also checks that voting is still open, and refuses to re-accept a ciphertext that was already replaced, so an old request can't be replayed to roll back a change.
+
+This protects against someone who only has your voting link or auth token. It can't protect a vote if the voting device itself is compromised, which is why SIV also offers other ways to check your vote, such as checking with a second device.
+
+## For Election Administrators
+
+- **No extra votes are created.** A change updates the voter's existing encrypted ballot in place. The vote count doesn't go up, and each voter still has exactly one accepted ballot.
+
+- **Only the latest version is tallied.** The list of accepted votes, and therefore the anonymization (shuffling), unlocking, and tally, only ever include each voter's latest submitted ciphertext.
+
+- **Prior versions.** Earlier encrypted submissions are kept internally with each vote as replacement history, for audit & debugging. They are not accepted votes, and they are never shuffled, unlocked, or tallied.
+
+- **Closing the election ends changes.** Once you stop accepting votes, the server rejects any further changes, even from an out-of-date voter page.
+
+- **Confirmation emails** are sent for the initial submission only, not for each change.
+
+- **Pending votes.** For elections that accept votes via a shared link, a voter can also change a vote that is still pending your approval. Approving it accepts the voter's latest version.
+
+- Each vote can be changed up to 100 times.

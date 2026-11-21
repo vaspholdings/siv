@@ -43,6 +43,14 @@ The entire process leaves a written audit trail, for independent verification.
   },
 
   {
+    id: 'change-vote',
+    q: 'Can I change my vote after submitting it?',
+    resp: `Yes, while the election is still accepting votes, you can return on the same voting device and change your selections. Submitting the change replaces your earlier encrypted ballot; it does not add a second vote. Only your latest submitted ballot is tallied. Once voting closes, submitted votes can no longer be changed.
+
+Changes must be made from the same browser & device you originally voted from, because that device holds the private key that authorizes changes to your ballot. See <a href="https://siv.org/docs/changing-your-vote" target="_blank">Changing a Submitted Vote</a>.`,
+  },
+
+  {
     id: 'privacy',
     q: 'How does SIV ensure Vote Privacy?',
     resp: `Using <a href="https://en.wikipedia.org/wiki/Threshold_cryptosystem" target="_blank">Threshold Key Cryptography</a>, the SIV system doesn't allow anyone, including the election administrators, to see how anyone else voted.

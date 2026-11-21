@@ -14,7 +14,7 @@ These three pre-election steps — labeled `a`, `b`, & `c` — can be completed 
 
 The Election Administrator must define a list of who is an eligible voter. Every Voter gets assigned a unique Authorization Token ("`Voter Auth Token`").
 
-Auth Tokens are required to cast a vote and can only be used once. They are intentionally infeasible to guess, and only valid for a single election. The SIV Admin Software automatically generates them, using cryptographically secure randomness, whenever an Admin adds a new Voter.
+Auth Tokens are required to cast a vote. A Voter Auth Token authorizes the voter's initial submission, and can never be used to create a second accepted ballot. (While voting remains open, the voter may still _replace_ their own submitted ballot, from the same device — see [Step 3](#step-3-voters-submit-encrypted-votes).) They are intentionally infeasible to guess, and only valid for a single election. The SIV Admin Software automatically generates them, using cryptographically secure randomness, whenever an Admin adds a new Voter.
 
 Currently, they are strings of 10 hexadecimal characters (e.g. `2378bf376d`), which creates $16^{10}$ (= $2^{40}$), a little over a trillion possibilities. Attempting to brute force auth tokens is not currently a risk, because validating them is logged per IP address, and can be rate-limited.
 
@@ -209,7 +209,7 @@ This looks like a standard POST request to https://siv.org/submit-vote, with a J
 }
 ```
 
-The SIV server automatically checks that the Voter Auth Token matches an eligible voter, and that it hasn't already been used.
+The SIV server automatically checks that the Voter Auth Token matches an eligible voter, and that it hasn't already been used for an initial submission.
 
 If it passes, the vote is added to a public list of all votes received so far.
 
@@ -218,6 +218,33 @@ The voter is sent a confirmation email that their encrypted vote has been receiv
 This lets the voter know their job is done. It also alerts them in case someone else somehow gained access to their auth token. And it serves as a written receipt that the vote was accepted, to allow for auditing.
 
 Because of the strong encryption, the election administrator still has no way to know how individual voters choose to vote.
+
+#### Changing a submitted vote (optional)
+
+During the initial submission, the voter's device also registers a public signing key (Ed25519). The device generates this keypair itself, sends only the public key along with the encrypted vote, and keeps the private key in its local storage.
+
+While voting remains open, the same device may replace that voter's submitted encrypted ballot. The voter re-marks their ballot, their device re-encrypts the complete ballot with fresh randomness (keeping the same _Verification #_), and signs the new ciphertext with the private key. This looks like a POST request to https://siv.org/api/replace-vote, with a JSON body like:
+
+```
+{
+  auth: "20bc371dc4",
+  election_id: "1658271670580",
+  encrypted_vote: { mayor: { encrypted: "…", lock: "…" } },
+  signature: "…" // Ed25519 signature over { auth, election_id, encrypted_vote }
+}
+```
+
+The SIV server only accepts the replacement if:
+
+- voting is still open (the administrator hasn't stopped accepting votes),
+- the signature verifies against the public key stored with that voter's original submission, and
+- the ciphertext isn't one of that vote's earlier, already-replaced ciphertexts.
+
+The Voter Auth Token only identifies which vote is being addressed. Knowing it is not enough to replace a submitted ballot.
+
+Replacement updates the existing ballot in place. It does not create another accepted vote, and the count of votes doesn't change. Prior ciphertexts are kept privately as replacement history, but they are not accepted votes: only the latest submitted ciphertext appears in the public list of votes, and proceeds to anonymization and tallying.
+
+Because the private key never leaves the voting device, a vote can only be changed from the same browser & device that originally submitted it. See [Changing a Submitted Vote](https://siv.org/docs/changing-your-vote).
 
 ## Voting Period Ends
 
