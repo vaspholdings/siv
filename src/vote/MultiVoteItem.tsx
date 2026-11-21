@@ -13,6 +13,7 @@ export const MultiVoteItem = ({
   multiple_votes_allowed,
   options,
   question,
+  state,
   title,
   type,
 }: ItemType & {
@@ -21,7 +22,8 @@ export const MultiVoteItem = ({
   multiple_votes_allowed: number
   state: State
 }): JSX.Element => {
-  const [selected, setState] = useState(new Set<string>())
+  // Start from any stored selections (e.g. when changing a submitted vote)
+  const [selected, setState] = useState(() => storedSelections(state.plaintext, id, multiple_votes_allowed))
 
   // Store changes in localstorage state
   useEffect(() => {
@@ -86,4 +88,10 @@ export const MultiVoteItem = ({
       <br />
     </>
   )
+}
+
+/** Selections already stored for this question: `{id}_1 … {id}_n`, minus BLANKs */
+function storedSelections(plaintext: Record<string, string>, id: string, multiple_votes_allowed: number) {
+  const values = Array.from({ length: multiple_votes_allowed }, (_, i) => plaintext[`${id}_${i + 1}`])
+  return new Set(values.filter((value): value is string => !!value && value !== 'BLANK'))
 }

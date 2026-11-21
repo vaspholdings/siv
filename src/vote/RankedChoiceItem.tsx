@@ -25,7 +25,12 @@ export const RankedChoiceItem = ({
   rankings_allowed: number
   state: State
 }): JSX.Element => {
-  const [writeIn, setWriteIn] = useState('')
+  // Restore a stored write-in ranking (e.g. when changing a submitted vote)
+  const [writeIn, setWriteIn] = useState(() => {
+    const optionTokens = new Set(options.map(({ name, value }) => optionPlaintextToken(name, value)))
+    const rankings = Array.from({ length: rankings_allowed }, (_, i) => state.plaintext[`${id}_${i + 1}`])
+    return (write_in_allowed && rankings.find((v) => !!v && v !== 'BLANK' && !optionTokens.has(v))) || ''
+  })
   const [orderedOptions, setOrderedOptions] = useState(options)
 
   useEffect(() => {

@@ -21,7 +21,12 @@ export const Item = ({
   election_id?: string
   state: State
 }): JSX.Element => {
-  const [other, setOther] = useState<string>()
+  // Restore a stored write-in (e.g. when changing a submitted vote)
+  const [other, setOther] = useState<string | undefined>(() => {
+    const stored = state.plaintext[id]
+    const isOption = options.some(({ name, value }) => optionPlaintextToken(name, value) === stored)
+    return stored && stored !== 'BLANK' && !isOption ? stored : undefined
+  })
   const [error, setError] = useState(' ')
 
   return (
@@ -54,6 +59,7 @@ export const Item = ({
             }
             label={
               <TextField
+                defaultValue={other}
                 error={error !== ' '}
                 helperText={error}
                 id={`${id}-other`}

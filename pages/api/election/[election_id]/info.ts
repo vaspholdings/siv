@@ -20,6 +20,8 @@ export type ElectionInfo = {
   privacy_protectors_statements?: string
   public_whos_voted_snapshot?: Array<{ display_name?: string; has_voted: boolean }>
   skip_shuffle_proofs?: boolean
+  /** UI hint only (e.g. to hide "Change your vote"); vote endpoints enforce it server-side */
+  stop_accepting_votes?: boolean
   submission_confirmation?: string
   threshold_public_key?: string
   voter_applications_allowed?: boolean
@@ -65,6 +67,7 @@ export default async (req: NextApiRequest, res: NextApiResponse) => {
     privacy_protectors_statements,
     public_whos_voted_snapshot,
     skip_shuffle_proofs,
+    stop_accepting_votes,
     submission_confirmation,
     threshold_public_key,
     voter_applications_allowed,
@@ -88,6 +91,7 @@ export default async (req: NextApiRequest, res: NextApiResponse) => {
     privacy_protectors_statements,
     public_whos_voted_snapshot,
     skip_shuffle_proofs,
+    stop_accepting_votes: !!stop_accepting_votes,
     submission_confirmation,
     threshold_public_key,
     voter_applications_allowed,

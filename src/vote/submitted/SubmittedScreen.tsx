@@ -1,11 +1,12 @@
 import Link from 'next/link'
 import { useRouter } from 'next/router'
-import { Dispatch, useEffect, useReducer } from 'react'
+import { Dispatch, useEffect, useReducer, useState } from 'react'
 import { NoSsr } from 'src/_shared/NoSsr'
 
 import { MalwareCheck } from '../../malware-check/InitMalwareCheck'
 import { generateColumnNames } from '../generateColumnNames'
 import { State, VoteAction } from '../vote-state'
+import { ChangeVote } from './ChangeVote'
 import { DetailedEncryptionReceipt } from './DetailedEncryptionReceipt'
 import { EncryptedVote } from './EncryptedVote'
 import { InvalidatedVoteMessage } from './InvalidatedVoteMessage'
@@ -30,6 +31,7 @@ export function SubmittedScreen({
   // For auth=link, the real token is in ?link_auth= or local vote state — not the literal "link"
   const voteAuth = auth === 'link' ? (typeof link_auth === 'string' && link_auth) || state.link_auth || null : auth
   const [showEncryptionDetails, toggleEncryptionDetails] = useReducer((state) => !state, false)
+  const [editing, setEditing] = useState(false) // "Change your vote" editor open
 
   // Widen the page for the tables
   useEffect(() => {
@@ -45,7 +47,7 @@ export function SubmittedScreen({
       {voteAuth && <InvalidatedVoteMessage auth={voteAuth} {...{ state }} />}
       <MissingAuthInfoBanner {...{ auth, election_id, state }} />
 
-      {!disabledLinkToStatusPage.includes(election_id) && (
+      {!editing && !disabledLinkToStatusPage.includes(election_id) && (
         <Link
           as={`/election/${election_id}`}
           className="mb-8 inline-block text-[19px] font-bold"
@@ -57,51 +59,62 @@ export function SubmittedScreen({
         </Link>
       )}
 
-      <h3>How to verify your vote:</h3>
-      <p>
-        Once the election closes and votes are unlocked, you can find yours on the{' '}
-        <Link as={`/election/${election_id}`} href="/election/[election_id]" style={{ color: 'black' }} target="_blank">
-          Election Status page
-        </Link>{' '}
-        using its <em>Verification #</em>:
-      </p>
+      {voteAuth && <ChangeVote auth={voteAuth} {...{ dispatch, editing, election_id, setEditing, state }} />}
 
-      <UnlockedVote {...{ columns, state }} />
-
-      <p className="text-xs opacity-60">
-        This secret <em>Verification #</em> is a random number, generated and encrypted on your own device.
-        <br />
-        No one else can possibly know it.
-      </p>
-
-      {voteAuth && <MalwareCheck auth={voteAuth} {...{ dispatch, election_id, state }} />}
-
-      {/* Encryption */}
-      <h3 className="mt-16">How your vote was submitted:</h3>
-
-      <p>
-        <img className="relative top-[3px] mr-[7px] opacity-80" src="/vote/lock.png" width="12px" />
-        To protect your privacy, your vote was encrypted before submission:
-      </p>
-
-      <EncryptedVote {...{ auth, columns, state }} />
-
-      <p className="text-xs opacity-60">
-        Its contents will only be unlocked after the election closes and all votes have been shuffled for safe
-        anonymization.
-      </p>
-
-      <p className="mt-3 text-xs opacity-70">
-        <a className="cursor-pointer" onClick={toggleEncryptionDetails}>
-          {showEncryptionDetails ? '[-] Hide' : '[+] Show'} Encryption Details
-        </a>
-      </p>
-
-      {showEncryptionDetails && (
+      {!editing && (
         <>
-          <h4>Encryption Receipt:</h4>
+          <h3>How to verify your vote:</h3>
+          <p>
+            Once the election closes and votes are unlocked, you can find yours on the{' '}
+            <Link
+              as={`/election/${election_id}`}
+              href="/election/[election_id]"
+              style={{ color: 'black' }}
+              target="_blank"
+            >
+              Election Status page
+            </Link>{' '}
+            using its <em>Verification #</em>:
+          </p>
 
-          <DetailedEncryptionReceipt {...{ auth, election_id, state }} />
+          <UnlockedVote {...{ columns, state }} />
+
+          <p className="text-xs opacity-60">
+            This secret <em>Verification #</em> is a random number, generated and encrypted on your own device.
+            <br />
+            No one else can possibly know it.
+          </p>
+
+          {voteAuth && <MalwareCheck auth={voteAuth} {...{ dispatch, election_id, state }} />}
+
+          {/* Encryption */}
+          <h3 className="mt-16">How your vote was submitted:</h3>
+
+          <p>
+            <img className="relative top-[3px] mr-[7px] opacity-80" src="/vote/lock.png" width="12px" />
+            To protect your privacy, your vote was encrypted before submission:
+          </p>
+
+          <EncryptedVote {...{ auth, columns, state }} />
+
+          <p className="text-xs opacity-60">
+            Its contents will only be unlocked after the election closes and all votes have been shuffled for safe
+            anonymization.
+          </p>
+
+          <p className="mt-3 text-xs opacity-70">
+            <a className="cursor-pointer" onClick={toggleEncryptionDetails}>
+              {showEncryptionDetails ? '[-] Hide' : '[+] Show'} Encryption Details
+            </a>
+          </p>
+
+          {showEncryptionDetails && (
+            <>
+              <h4>Encryption Receipt:</h4>
+
+              <DetailedEncryptionReceipt {...{ auth, election_id, state }} />
+            </>
+          )}
         </>
       )}
     </NoSsr>
