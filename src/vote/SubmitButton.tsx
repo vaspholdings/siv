@@ -6,7 +6,7 @@ import { OnClickButton } from '../_shared/Button'
 import { api } from '../api-helper'
 import { AirGappedSubmission } from './AirGappedSubmission'
 import { generateColumnNames } from './generateColumnNames'
-import { State } from './vote-state'
+import { hasSelection, State } from './vote-state'
 
 export const SubmitButton = ({
   auth,
@@ -103,7 +103,7 @@ export const SubmitButton = ({
             !state.ballot_design_finalized ||
             !state.public_key ||
             !(state.voter_pubkey || state.replacement_pubkey) ||
-            Object.values(state.plaintext).filter((v) => v !== 'BLANK').length === 0 ||
+            !hasSelection(state.plaintext) ||
             buttonText !== 'Submit'
           }
           onClick={() => {

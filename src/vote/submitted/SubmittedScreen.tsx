@@ -5,7 +5,7 @@ import { NoSsr } from 'src/_shared/NoSsr'
 
 import { MalwareCheck } from '../../malware-check/InitMalwareCheck'
 import { generateColumnNames } from '../generateColumnNames'
-import { State } from '../vote-state'
+import { State, VoteAction } from '../vote-state'
 import { DetailedEncryptionReceipt } from './DetailedEncryptionReceipt'
 import { EncryptedVote } from './EncryptedVote'
 import { InvalidatedVoteMessage } from './InvalidatedVoteMessage'
@@ -22,7 +22,7 @@ export function SubmittedScreen({
   state,
 }: {
   auth: string
-  dispatch: Dispatch<Record<string, string>>
+  dispatch: Dispatch<VoteAction>
   election_id: string
   state: State & { submitted_at: Date }
 }): JSX.Element {

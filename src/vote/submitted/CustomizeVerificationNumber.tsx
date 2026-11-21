@@ -1,12 +1,11 @@
 import { Check, PenLine } from 'lucide-react'
 import { Dispatch, useEffect, useRef, useState } from 'react'
-import { api } from 'src/api-helper'
-import { encodeReplacementPayload, signReplacement } from 'src/crypto/voter-key'
 import { h26fonts } from 'src/homepage2026/fonts'
 import { useElectionInfo } from 'src/status/use-election-info'
 
 import { strengthenTracking } from '../strengthen-tracking'
-import { State } from '../vote-state'
+import { isVerificationNumberChange, prepareVoteReplacement, State, VoteAction } from '../vote-state'
+import { getVoterPrivkey, submitVoteReplacement } from './submit-replacement'
 
 type Step = 'closed' | 'digits' | 'done' | 'write-down'
 
@@ -19,25 +18,24 @@ export function CustomizeVerificationNumber({
   state,
 }: {
   auth: string
-  dispatch: Dispatch<Record<string, string>>
+  dispatch: Dispatch<VoteAction>
   election_id: string
   onCancel?: () => void
   startOpen?: boolean
   state: State
 }) {
-  const [step, setStep] = useState<Step>(
-    state.previous_submissions?.length ? 'done' : startOpen ? 'write-down' : 'closed',
-  )
+  // Selection changes ("Change your vote") also archive receipts, but don't customize the Verification #
+  const verificationChanges = (state.previous_submissions || []).filter(isVerificationNumberChange)
+  const [step, setStep] = useState<Step>(verificationChanges.length ? 'done' : startOpen ? 'write-down' : 'closed')
   const [digits, setDigits] = useState('')
   const [deviceSnapshot, setDeviceSnapshot] = useState(state.tracking || '')
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
-  const pendingTracking = useRef<null | string>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   // Show caveat only if last strengthen is newer than the unlocked snapshot
   const { last_decrypted_at } = useElectionInfo()
-  const lastStrengthenedAt = state.previous_submissions?.at(-1)?.replaced_at
+  const lastStrengthenedAt = verificationChanges.at(-1)?.replaced_at
   const awaitingReunlock =
     !!last_decrypted_at &&
     !!lastStrengthenedAt &&
@@ -46,38 +44,6 @@ export function CustomizeVerificationNumber({
   useEffect(() => {
     if (step === 'digits') inputRef.current?.focus()
   }, [step])
-
-  // After local re-encrypt, sign & POST the new ciphertext
-  useEffect(() => {
-    if (!pendingTracking.current || state.tracking !== pendingTracking.current) return
-    const privkey = state.voter_privkey || state.replacement_privkey // safe to drop replacement_* after 2026-09-29
-    if (!privkey || !Object.keys(state.encrypted).length) return
-
-    pendingTracking.current = null
-    ;(async () => {
-      try {
-        const message = encodeReplacementPayload({ auth, election_id, encrypted_vote: state.encrypted })
-        const signature = await signReplacement(privkey, message)
-        const response = await api('strengthened-vote', {
-          auth,
-          election_id,
-          encrypted_vote: state.encrypted,
-          signature,
-        })
-        if (response.status !== 200) {
-          const body = (await response.json()) as { error?: string }
-          setError(body.error || 'Failed to submit strengthened vote')
-          setSubmitting(false)
-          return
-        }
-        setStep('done')
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e))
-      } finally {
-        setSubmitting(false)
-      }
-    })()
-  }, [auth, election_id, state.encrypted, state.voter_privkey, state.replacement_privkey, state.tracking])
 
   if (!state.tracking) return null
 
@@ -96,25 +62,41 @@ export function CustomizeVerificationNumber({
 
   const close = () => {
     if (onCancel) return onCancel()
-    setStep(state.previous_submissions?.length ? 'done' : 'closed')
+    setStep(verificationChanges.length ? 'done' : 'closed')
   }
 
   const [prefixA = '', prefixB = ''] = (state.tracking || '').split('-')
   const trackingPrefix = `${prefixA}-${prefixB}-`
-  const previousLast4s = (state.previous_submissions || [])
+  const previousLast4s = verificationChanges
     .map((s) => s.tracking?.split('-')[2] || s.tracking?.slice(-4))
     .filter((t): t is string => !!t)
     .reverse()
   const monoTracking = 'font-mono26 text-[0.95rem] tracking-[0.06em] tabular-nums'
 
-  const apply = () => {
+  // Re-encrypt under the new number, sign & submit — and only then update this device's receipt
+  const apply = async () => {
     if (!preview || submitting) return
-    if (!(state.voter_privkey || state.replacement_privkey)) return setError('Missing voter key on this device')
+    const privkey = getVoterPrivkey(state)
+    if (!privkey) return setError('Missing voter key on this device')
+
+    const prepared = prepareVoteReplacement(state, { columns: [], tracking: preview })
+    if ('error' in prepared) return setError(prepared.error)
 
     setError('')
     setSubmitting(true)
-    pendingTracking.current = preview
-    dispatch({ tracking: preview })
+    const result = await submitVoteReplacement({
+      auth,
+      election_id,
+      encrypted_vote: prepared.vote.encrypted,
+      privkey,
+      reason: 'verification-number',
+    })
+    setSubmitting(false)
+    if (!result.ok) return setError(result.error)
+
+    const { replaced_at } = result
+    dispatch({ commit_vote_replacement: { reason: 'verification-number', replaced_at, vote: prepared.vote } })
+    setStep('done')
   }
 
   return (
