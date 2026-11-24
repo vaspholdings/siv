@@ -30,6 +30,10 @@ const info = (overrides: Record<string, unknown> = {}) => ({
 
 const option = (name: string) => cy.contains('#edit-submitted-vote label', name).find('input')
 
+/** The vote state is written to localStorage in an effect just after render, so retry until it lands */
+const storedVote = (check: (stored: Record<string, any>) => void) =>
+  cy.window().should((win) => check(JSON.parse(win.localStorage.getItem(storageKey) || '{}')))
+
 describe('Change your vote', () => {
   beforeEach(() => {
     cy.intercept('GET', `/api/election/${election_id}/info`, info()).as('info')
@@ -51,9 +55,9 @@ describe('Change your vote', () => {
     cy.contains('Vote Submitted.').should('be.visible')
 
     let originalTracking = ''
-    cy.window().then((win) => {
-      originalTracking = JSON.parse(win.localStorage.getItem(storageKey) || '{}').tracking
-      expect(originalTracking).to.match(/^\d{4}-\d{4}-\d{4}$/)
+    storedVote((stored) => {
+      expect(stored.tracking, 'initial Verification #').to.match(/^\d{4}-\d{4}-\d{4}$/)
+      originalTracking = stored.tracking
     })
 
     // 2. "Change your vote" reopens the ballot with the submitted choices
@@ -66,10 +70,9 @@ describe('Change your vote', () => {
     // 3. Editing the draft doesn't touch the stored receipt
     option('Bob').click({ force: true })
     option('Dave').click({ force: true })
-    cy.window().then((win) => {
-      const stored = JSON.parse(win.localStorage.getItem(storageKey) || '{}')
-      expect(stored.plaintext.mayor).to.eq('Alice')
-      expect(stored.previous_submissions).to.eq(undefined)
+    storedVote((stored) => {
+      expect(stored.plaintext.mayor, 'step 3: receipt untouched while editing').to.eq('Alice')
+      expect(stored.previous_submissions, 'step 3: no history yet').to.eq(undefined)
     })
 
     // 4. Submit the change: complete, signed, freshly re-encrypted ballot
@@ -86,13 +89,12 @@ describe('Change your vote', () => {
 
     // 5. Success message, and the receipt now holds the new vote under the same Verification #
     cy.get('#vote-updated').should('contain', 'Vote updated.')
-    cy.window().then((win) => {
-      const stored = JSON.parse(win.localStorage.getItem(storageKey) || '{}')
-      expect(stored.plaintext.mayor).to.eq('Bob')
-      expect(stored.tracking).to.eq(originalTracking)
-      expect(stored.previous_submissions).to.have.length(1)
-      expect(stored.previous_submissions[0].plaintext.mayor).to.eq('Alice')
-      expect(stored.previous_submissions[0].reason).to.eq('selections')
+    storedVote((stored) => {
+      expect(stored.plaintext.mayor, 'step 5: receipt has new vote').to.eq('Bob')
+      expect(stored.tracking, 'step 5: same Verification #').to.eq(originalTracking)
+      expect(stored.previous_submissions, 'step 5: one archived receipt').to.have.length(1)
+      expect(stored.previous_submissions[0].plaintext.mayor, 'step 5: archived old vote').to.eq('Alice')
+      expect(stored.previous_submissions[0].reason, 'step 5: archive reason').to.eq('selections')
     })
 
     // 6. Reopening shows the newest selections; it can be changed again
@@ -110,10 +112,9 @@ describe('Change your vote', () => {
     cy.wait('@failed')
     cy.get('#change-vote-error').should('contain', 'Server exploded')
     cy.get('#vote-updated').should('not.exist')
-    cy.window().then((win) => {
-      const stored = JSON.parse(win.localStorage.getItem(storageKey) || '{}')
-      expect(stored.plaintext.mayor).to.eq('Bob')
-      expect(stored.previous_submissions).to.have.length(1)
+    storedVote((stored) => {
+      expect(stored.plaintext.mayor, 'step 7: failed change keeps receipt').to.eq('Bob')
+      expect(stored.previous_submissions, 'step 7: no new archive').to.have.length(1)
     })
     cy.get('#cancel-change-vote').click()
 
